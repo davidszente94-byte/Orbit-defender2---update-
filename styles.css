@@ -1,0 +1,173 @@
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  background: #000000;
+  color: #f4f4f4;
+  font-family: Inter, system-ui, sans-serif;
+  overflow: hidden;
+}
+
+body {
+  display: flex;
+  min-width: 100%;
+  min-height: 100%;
+}
+
+#gameCanvas {
+  display: block;
+  touch-action: none;
+  width: 100%;
+  height: 100%;
+}
+
+#ui {
+  position: fixed;
+  top: 16px;
+  left: 16px;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  pointer-events: none;
+}
+
+#status {
+  background: rgba(0, 0, 0, 0.55);
+  padding: 10px 14px;
+  border-radius: 14px;
+  border: 1px solid rgba(255,255,255,0.08);
+  color: #d8faff;
+  font-weight: 600;
+}
+
+#hint {
+  font-size: 0.9rem;
+  color: rgba(255, 255, 255, 0.72);
+}
+
+#overlay {
+  position: fixed;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background: rgba(0, 0, 0, 0.65);
+  color: #ffffff;
+  padding: 24px;
+  z-index: 20;
+  transition: opacity 180ms ease;
+}
+
+#overlay.hide {
+  opacity: 0;
+  pointer-events: none;
+}
+
+#overlay {
+  text-align: center;
+  padding: 32px;
+}
+
+#overlay h1 {
+  margin: 0 0 12px;
+  font-size: clamp(2rem, 5vw, 3rem);
+}
+
+#overlay p {
+  margin: 0 0 18px;
+  line-height: 1.5;
+  color: #cddcd6;
+}
+
+#overlay .small {
+  font-size: 0.92rem;
+  opacity: 0.82;
+}
+
+button {
+  all: unset;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 14px 24px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, #3af26d 0%, #0ac54b 100%);
+  color: #050b03;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+button:hover {
+  transform: translateY(-1px);
+}
+
+.menu-buttons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.shop-item {
+  background: rgba(255,255,255,0.05);
+  padding: 16px;
+  border-radius: 12px;
+  border: 1px solid rgba(255,255,255,0.1);
+  margin-bottom: 10px;
+}
+
+#shieldButton {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 64px;
+  height: 64px;
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.7);
+  border: 3px solid rgba(71, 255, 230, 0.2);
+  display: none;
+  z-index: 100;
+  cursor: pointer;
+  box-shadow: 0 0 15px rgba(0,0,0,0.5);
+  touch-action: none;
+  justify-content: center;
+  align-items: center;
+}
+
+#shieldButton::before {
+  content: '';
+  position: absolute;
+  inset: -3px;
+  border-radius: 50%;
+  background: conic-gradient(#47ffe6 calc(var(--progress-val, 0) * 1%), transparent 0);
+  -webkit-mask: radial-gradient(transparent 58%, #000 60%);
+  mask: radial-gradient(transparent 58%, #000 60%);
+  pointer-events: none;
+}
+
+#shieldButton::after {
+  content: '';
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  background: #47ffe6;
+  border-radius: 50%;
+  top: 50%;
+  left: 50%;
+  margin-top: -5px;
+  margin-left: -5px;
+  transform: rotate(calc(var(--progress-val, 0) * 3.6deg - 90deg)) translate(32px);
+  display: var(--dot-display, block);
+  pointer-events: none;
+}
+
+.shield-icon {
+  font-size: 28px;
+  pointer-events: none;
+  user-select: none;
+}
