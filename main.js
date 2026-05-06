@@ -6,7 +6,8 @@ class GameStateManager {
       SHOP: 'SHOP',
       PLAYING: 'PLAYING',
       GAMEOVER: 'GAMEOVER',
-      LEVEL_UP: 'LEVEL_UP'
+      LEVEL_UP: 'LEVEL_UP',
+      PAUSED: 'PAUSED'
     };
     this.current = this.states.MENU;
   }
@@ -210,6 +211,8 @@ class Game {
     this.state = new GameStateManager();
     this.entityManager = new EntityManager();
     this.lastTimestamp = 0;
+    this.isPaused = false;
+    this.lastPulseTime = 0;
     this.spawnTimer = 0;
     this.spawnInterval = 2.1;
     this.core = { x: 0, y: 0, radius: 0 };
@@ -222,7 +225,6 @@ class Game {
     this.CORE_DAMAGE_COOLDOWN = 1000;
 
     // Shield System
-    this.shieldUnlocked = localStorage.getItem('orbit_defender_shieldUnlocked') === 'true';
     this.shieldActive = false;
     this.lastShieldUseTime = -20000;
     this.shieldDuration = 3000;
@@ -263,6 +265,12 @@ class Game {
     this.shieldButton.innerHTML = '<div class="shield-icon">🛡️</div>';
     document.body.appendChild(this.shieldButton);
 
+    // Create Quit Button UI
+    this.quitButton = document.createElement('button');
+    this.quitButton.id = 'quitButton';
+    this.quitButton.textContent = 'Quit';
+    document.body.appendChild(this.quitButton);
+
     this.registerEvents();
     this.resizeCanvas();
     window.addEventListener('resize', () => this.resizeCanvas());
@@ -294,6 +302,7 @@ class Game {
     this.activeSectors.fill(0);
     this.coreLastHitTime = -1000;
     this.shieldActive = false;
+    this.lastPulseTime = performance.now();
     this.spawnTimer = 0;
     this.playerLevel = 1;
     this.playerXP = 0;
@@ -336,19 +345,24 @@ class Game {
     });
 
     document.addEventListener('touchstart', event => {
-      if (event.touches.length > 0) {
+      if (this.state.current === this.state.states.PLAYING) {
         event.preventDefault();
-        this.onInputDown();
       }
+      if (this.inputDown) return;
+      this.onInputDown();
     }, { passive: false });
 
     document.addEventListener('touchend', event => {
-      event.preventDefault();
+      if (this.state.current === this.state.states.PLAYING) {
+        event.preventDefault();
+      }
       this.onInputUp(performance.now() / 1000);
     }, { passive: false });
 
     document.addEventListener('touchcancel', event => {
-      event.preventDefault();
+      if (this.state.current === this.state.states.PLAYING) {
+        event.preventDefault();
+      }
       this.onInputUp(performance.now() / 1000);
     }, { passive: false });
 
@@ -361,10 +375,16 @@ class Game {
       this.activateShield();
     }, { passive: false });
 
-    this.startButton.addEventListener('click', () => this.start());
-    this.startButton.addEventListener('touchend', event => {
+    this.startButton.onclick = () => this.start();
+    this.startButton.ontouchend = event => {
       event.preventDefault();
       this.start();
+    };
+
+    this.quitButton.addEventListener('click', () => this.showQuitConfirmation());
+    this.quitButton.addEventListener('touchend', event => {
+      event.preventDefault();
+      this.showQuitConfirmation();
     }, { passive: false });
   }
 
@@ -401,8 +421,13 @@ class Game {
   }
 
   activateShield() {
-    if (!this.shieldUnlocked || this.shieldActive || this.state.current !== this.state.states.PLAYING) return;
+    if (!this.abilitiesUnlocked.shield || this.shieldActive || this.state.current !== this.state.states.PLAYING) return;
     
+    const level = this.abilityLevels.shield;
+    // Scaling: Lv2:+1s Dur, Lv3:+1s Dur, Lv4:15s CD, Lv5:12s CD
+    this.shieldDuration = 3000 + (level >= 2 ? 1000 : 0) + (level >= 3 ? 1000 : 0);
+    this.shieldCooldown = level >= 5 ? 12000 : (level >= 4 ? 15000 : 20000);
+
     const now = performance.now();
     if (now - this.lastShieldUseTime >= this.shieldCooldown) {
       this.shieldActive = true;
@@ -416,6 +441,57 @@ class Game {
     return "";
   }
 
+  showQuitConfirmation() {
+    this.isPaused = true;
+    this.state.set(this.state.states.PAUSED);
+    this.overlay.classList.remove('hide');
+    this.overlay.innerHTML = `
+      <h1>Quit Game?</h1>
+      <p>Are you sure to leave the game? Unsaved progress will be lost.</p>
+      <div class="menu-buttons">
+        <button id="yesQuitBtn">Yes</button>
+        <button id="noQuitBtn">No</button>
+      </div>
+    `;
+    const yesQuit = () => {
+      this.ui.finalizeGold(); // Save gold before going to menu
+      this.showMenu();
+    };
+    const noQuit = () => {
+      this.isPaused = false;
+      this.resumeGame();
+    };
+
+    const yesBtn = document.getElementById('yesQuitBtn');
+    const noBtn = document.getElementById('noQuitBtn');
+
+    yesBtn.onclick = yesQuit;
+    yesBtn.ontouchend = (e) => { e.preventDefault(); yesQuit(); };
+    noBtn.onclick = noQuit;
+    noBtn.ontouchend = (e) => { e.preventDefault(); noQuit(); };
+  }
+
+  triggerPulse() {
+    const player = this.entityManager.players[0];
+    if (!player) return;
+
+    // Centered on player's current orbital position
+    const playerAngle = Math.atan2(Math.sin(player.angle), Math.cos(player.angle));
+    const arcWidth = 0.5; // Roughly 30 degrees
+
+    this.entityManager.projectiles.forEach(p => {
+      const pAngle = Math.atan2(p.y - this.core.y, p.x - this.core.x);
+      let diff = Math.abs(pAngle - playerAngle);
+      if (diff > Math.PI) diff = 2 * Math.PI - diff;
+
+      if (diff < arcWidth) {
+        if (p.sector !== undefined) this.activeSectors[p.sector]--;
+        p.destroy();
+        this.ui.addGold(1); // Small reward for pulse kills
+      }
+    });
+  }
+
   getXPRequired() {
     return this.playerLevel * 5;
   }
@@ -426,6 +502,7 @@ class Game {
       this.playerXP -= this.getXPRequired();
       this.playerLevel += 1;
       this.ui.updateText();
+      this.isPaused = true;
       this.state.set(this.state.states.LEVEL_UP);
       this.showLevelUpMenu();
     }
@@ -445,21 +522,27 @@ class Game {
         const btn = document.createElement('button');
         const name = key === 'trail' ? 'Destroying Trail' : key === 'pulse' ? 'Pulsefire' : 'Shield';
         btn.textContent = `${name} (Lv.${this.abilityLevels[key] + 1})`;
-        btn.onclick = () => {
+        const selectUpgrade = () => {
           this.abilityLevels[key]++;
           if (key === 'trail') {
             const duration = 0.3 + this.abilityLevels.trail * 0.3;
             this.entityManager.players.forEach(p => p.trailDuration = duration);
+          } else if (key === 'shield') {
+            const lvl = this.abilityLevels.shield;
+            this.shieldDuration = 3000 + (lvl >= 2 ? 1000 : 0) + (lvl >= 3 ? 1000 : 0);
+            this.shieldCooldown = lvl >= 5 ? 12000 : (lvl >= 4 ? 15000 : 20000);
           }
           this.resumeGame();
         };
+        btn.onclick = selectUpgrade;
+        btn.ontouchend = (e) => { e.preventDefault(); selectUpgrade(); };
         container.appendChild(btn);
       });
     } else {
       const isGold = Math.random() < 0.9;
       const btn = document.createElement('button');
       btn.textContent = isGold ? "+10 Gold" : "+1 Health";
-      btn.onclick = () => {
+      const takeBonus = () => {
         if (isGold) {
           this.ui.addGold(10);
         } else {
@@ -468,11 +551,14 @@ class Game {
         }
         this.resumeGame();
       };
+      btn.onclick = takeBonus;
+      btn.ontouchend = (e) => { e.preventDefault(); takeBonus(); };
       container.appendChild(btn);
     }
   }
 
   resumeGame() {
+    this.isPaused = false;
     this.state.set(this.state.states.PLAYING);
     this.overlay.classList.add('hide');
     // Check if another level was banked during the pause
@@ -596,7 +682,13 @@ class Game {
     const deltaTime = Math.min((timestamp - this.lastTimestamp) / 1000, 0.033);
     this.lastTimestamp = timestamp;
 
-    if (this.state.current === this.state.states.PLAYING) {
+    if (this.isPaused) {
+      this.render();
+      window.requestAnimationFrame(timestamp => this.gameLoop(timestamp));
+      return;
+    }
+
+    if (this.state.current === this.state.states.PLAYING || this.state.current === this.state.states.PAUSED || this.state.current === this.state.states.LEVEL_UP) { // Render even when paused or level up
       const currentTime = timestamp / 1000;
       const elapsed = (timestamp - this.gameStartTime) / 1000;
 
@@ -606,9 +698,18 @@ class Game {
         this.ui.updateText();
       }
 
+      // Pulsefire Timer
+      if (this.abilitiesUnlocked.pulse && this.abilityLevels.pulse > 0) {
+        const pulseInterval = (6 - this.abilityLevels.pulse) * 1000;
+        if (timestamp - this.lastPulseTime >= pulseInterval) {
+          this.triggerPulse();
+          this.lastPulseTime = timestamp;
+        }
+      }
+
       // Update Shield UI
       if (this.shieldButton) {
-        const isVisible = this.shieldUnlocked && this.state.current === this.state.states.PLAYING;
+        const isVisible = this.abilitiesUnlocked.shield && (this.state.current === this.state.states.PLAYING || this.state.current === this.state.states.PAUSED || this.state.current === this.state.states.LEVEL_UP);
         this.shieldButton.style.display = isVisible ? 'flex' : 'none';
         if (isVisible) {
           const cdProgress = Math.min(1, (timestamp - this.lastShieldUseTime) / this.shieldCooldown);
@@ -616,6 +717,11 @@ class Game {
           this.shieldButton.style.opacity = this.shieldActive ? '0.5' : '1';
           this.shieldButton.style.setProperty('--dot-display', cdProgress >= 1 ? 'none' : 'block');
         }
+      }
+
+      // Update Quit Button visibility
+      if (this.quitButton) {
+        this.quitButton.style.display = (this.state.current === this.state.states.PLAYING || this.state.current === this.state.states.PAUSED || this.state.current === this.state.states.LEVEL_UP) ? 'block' : 'none';
       }
 
       // Difficulty Scaling
@@ -646,6 +752,9 @@ class Game {
         this.ui.finalizeGold();
         this.state.set(this.state.states.GAMEOVER);
       }
+    }
+    if (this.state.current === this.state.states.PLAYING) { // Only update game logic if playing
+      // All game logic that updates state should be here
     }
 
     this.render();
@@ -703,8 +812,12 @@ class Game {
       </div>
     `;
     this.overlay.classList.remove('hide');
-    document.getElementById('playBtn').onclick = () => this.start();
-    document.getElementById('shopBtn').onclick = () => this.showShop();
+    const playBtn = document.getElementById('playBtn');
+    playBtn.onclick = () => this.start();
+    playBtn.ontouchend = (e) => { e.preventDefault(); this.start(); };
+    const shopBtn = document.getElementById('shopBtn');
+    shopBtn.onclick = () => this.showShop();
+    shopBtn.ontouchend = (e) => { e.preventDefault(); this.showShop(); };
   }
 
   showShop() {
@@ -756,28 +869,33 @@ class Game {
     const buyTrailBtn = document.getElementById('buyTrail');
     if (buyTrailBtn) {
       buyTrailBtn.onclick = () => buyAbility('trail', 50);
+      buyTrailBtn.ontouchend = (e) => { e.preventDefault(); buyAbility('trail', 50); };
     }
 
     const buyPulseBtn = document.getElementById('buyPulse');
     if (buyPulseBtn) {
       buyPulseBtn.onclick = () => buyAbility('pulse', 50);
+      buyPulseBtn.ontouchend = (e) => { e.preventDefault(); buyAbility('pulse', 50); };
     }
 
     const buyShieldBtn = document.getElementById('buyShield');
     if (buyShieldBtn) {
-      buyShieldBtn.onclick = () => {
+      const purchaseShield = () => {
         if (this.ui.totalGold >= 50) {
           this.ui.totalGold -= 50;
-          this.abilitiesUnlocked.shield = true; // Update the new structure
-          this.shieldUnlocked = true; // Keep old flag for now as it's used in gameplay
+          this.abilitiesUnlocked.shield = true;
           localStorage.setItem('orbit_defender_totalGold', this.ui.totalGold);
-          localStorage.setItem('ability_shield', 'true'); // Use new key
+          localStorage.setItem('ability_shield', 'true');
           this.ui.updateText();
           this.showShop();
         }
       };
+      buyShieldBtn.onclick = purchaseShield;
+      buyShieldBtn.ontouchend = (e) => { e.preventDefault(); purchaseShield(); };
     }
-    document.getElementById('backMenu').onclick = () => this.showMenu();
+    const backBtn = document.getElementById('backMenu');
+    backBtn.onclick = () => this.showMenu();
+    backBtn.ontouchend = (e) => { e.preventDefault(); this.showMenu(); };
   }
 
   showGameOver() {
@@ -790,8 +908,12 @@ class Game {
       </div>
     `;
     this.overlay.classList.remove('hide');
-    document.getElementById('retryBtn').onclick = () => this.start();
-    document.getElementById('menuBtn').onclick = () => this.showMenu();
+    const retryBtn = document.getElementById('retryBtn');
+    retryBtn.onclick = () => this.start();
+    retryBtn.ontouchend = (e) => { e.preventDefault(); this.start(); };
+    const menuBtn = document.getElementById('menuBtn');
+    menuBtn.onclick = () => this.showMenu();
+    menuBtn.ontouchend = (e) => { e.preventDefault(); this.showMenu(); };
   }
 
   resizeCanvas() {
