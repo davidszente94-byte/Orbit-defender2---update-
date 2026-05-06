@@ -360,7 +360,7 @@ class Game {
     this.activeSectors.fill(0);
     this.coreLastHitTime = -1000;
     this.shieldActive = false;
-    this.lastPulseTime = performance.now();
+    this.lastPulseTime = 0; // Ensures immediate first shot on start
     this.spawnTimer = 0;
     this.playerLevel = 1;
     this.playerXP = 0;
@@ -779,7 +779,8 @@ class Game {
 
       // Pulsefire Timer
       if (this.abilitiesUnlocked.pulse && this.abilityLevels.pulse > 0) {
-        const pulseInterval = (6 - this.abilityLevels.pulse) * 1000;
+        const intervals = [2000, 1000, 700, 500, 300];
+        const pulseInterval = intervals[Math.min(this.abilityLevels.pulse, 5) - 1];
         if (timestamp - this.lastPulseTime >= pulseInterval) {
           this.triggerPulse();
           this.lastPulseTime = timestamp;
