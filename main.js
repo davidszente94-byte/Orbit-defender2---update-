@@ -170,6 +170,16 @@ class EntityManager {
 class UIController {
   constructor(statusElement) {
     this.statusElement = statusElement;
+    this.uiContainer = document.getElementById('ui');
+    
+    // Create XP Bar
+    this.xpContainer = document.createElement('div');
+    this.xpContainer.id = 'xp-container';
+    this.xpBar = document.createElement('div');
+    this.xpBar.id = 'xp-bar';
+    this.xpContainer.appendChild(this.xpBar);
+    this.uiContainer.appendChild(this.xpContainer);
+
     this.gold = 0;
     this.totalGold = parseInt(localStorage.getItem('orbit_defender_totalGold')) || 0;
     this.health = 5;
@@ -177,9 +187,10 @@ class UIController {
   }
 
   updateText() {
-    const shieldStatus = window.gameInstance?.getShieldStatus?.() || "";
-    const levelInfo = window.gameInstance ? ` | LVL: ${window.gameInstance.playerLevel} XP: ${window.gameInstance.playerXP}/${window.gameInstance.getXPRequired()}` : "";
-    this.statusElement.textContent = `Gold: ${this.gold} (Total: ${this.totalGold}) | Health: ${this.health} ${shieldStatus}${levelInfo}`;
+    const levelInfo = window.gameInstance ? ` | LVL: ${window.gameInstance.playerLevel}` : "";
+    this.statusElement.textContent = `Gold: ${this.gold} (${this.totalGold}) | HP: ${this.health}${levelInfo}`;
+    
+    this.updateXPBar();
   }
 
   addGold(amount = 1) {
@@ -196,6 +207,13 @@ class UIController {
   takeDamage(amount = 1) {
     this.health = Math.max(0, this.health - amount);
     this.updateText();
+  }
+
+  updateXPBar() {
+    if (!window.gameInstance || !this.xpBar) return;
+    const xpNeeded = window.gameInstance.getXPRequired();
+    const progress = (window.gameInstance.playerXP / xpNeeded) * 100;
+    this.xpBar.style.width = `${Math.min(100, progress)}%`;
   }
 }
 
@@ -438,8 +456,7 @@ class Game {
   }
 
   getShieldStatus() {
-    if (this.shieldActive) return " | [SHIELD ACTIVE]";
-    return "";
+    return ""; // Shield text removed per request
   }
 
   showQuitConfirmation() {
@@ -561,6 +578,11 @@ class Game {
   resumeGame() {
     this.isPaused = false;
     this.state.set(this.state.states.PLAYING);
+    // Clear all projectiles on screen without granting rewards
+    this.entityManager.projectiles.forEach(p => {
+      if (p.sector !== undefined) this.activeSectors[p.sector]--;
+      p.destroy();
+    });
     this.overlay.classList.add('hide');
     // Check if another level was banked during the pause
     this.checkLevelUp();
